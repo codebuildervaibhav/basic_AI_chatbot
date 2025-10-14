@@ -1,20 +1,46 @@
 import { useState } from 'react';
 import { Header } from './components/Header';
-import ChatView from './components/ChatView'; // Changed to default import
-import ChatInput from './components/ChatInput'; // Changed to default import
-import { useChatSocket } from './hooks/useChatSocket';
+import ChatView from './components/ChatView';
+import ChatInput from './components/ChatInput';
+import { useEnhancedChatSocket } from './hooks/useEnhancedChatSocket';
+import CodeExecutionPanel from './components/CodeExecutionPanel';
 
 function App() {
-  const { messages, sendMessage, isConnected, isGenerating, stopGeneration } = useChatSocket({
-    ollamaHost: 'http://localhost:11434', // Ensure this matches your Ollama setup
-    model: 'gemma3:270m', // Ensure this model is pulled in Ollama
-    systemPrompt: 
-"You are a senior software engineer who values efficiency and directness. Be concise in your responses. Provide clear, correct code examples, prioritizing Drools business rules, ONLY IF RELEVANT or EXPLICITLY REQUESTED. For direct questions, give a direct answer without elaboration. If you can't find an answer, respond with 'I'm sorry, I don't have an answer to that question.' and do not make up an answer. Format code examples well with syntax highlighting. Avoid using phrases like 'as an AI language model' or similar. Do not provide lengthy introductions or unrequested explanations."      
+  const { 
+    messages, 
+    sendMessage, 
+    isConnected, 
+    isGenerating, 
+    stopGeneration,
+    isExecuting,
+    executionResult 
+  } = useEnhancedChatSocket({
+    ollamaHost: 'http://localhost:11434',
+    model: 'gemma3:270m',
+   systemPrompt: 
+`You are a Principal Engineer and System Architect. Your role is to act as a technical mentor.
+
+Your primary responsibilities are:
+1.  **Explain Concepts**: Break down complex software engineering and architectural concepts into simple, understandable terms.
+2.  **Discuss Trade-offs**: When presenting solutions or patterns, always discuss the pros and cons.
+3.  **Provide Code**: Write clean, idiomatic, and runnable code examples to illustrate your points, but only when necessary or requested.
+
+Your communication style must be:
+- **Direct and Concise**: Get straight to the point. Avoid filler and unnecessary introductions.
+- **Pragmatic**: Focus on practical, real-world advice.
+
+IMPORTANT RULES:
+- **Code Blocks**: All executable code must be in triple-backtick blocks with the correct language identifier (e.g., \`\`\`python).
+- **No Unrequested Code**: Do not provide code unless it is essential to answer the question or the user explicitly asks for it.
+- **Direct Answers**: If the user asks a direct question, provide a direct answer first, then elaborate if necessary.
+- **Honesty**: If you don't know the answer, state that clearly. Do not invent information.
+- **No Persona Leak**: Do not mention that you are an AI.`
   });
-  const [input, setInput] = useState('');
+  
+  const [input, setInput] = useState<string>('');
 
   const handleSendMessage = () => {
-    if (input.trim() && !isGenerating) {
+    if (input.trim() && !isGenerating && !isExecuting) {
       sendMessage(input);
       setInput('');
     }
@@ -22,13 +48,24 @@ function App() {
 
   return (
     <div className="flex flex-col h-screen bg-gray-900 text-gray-100">
-      <Header isConnected={isConnected} isGenerating={isGenerating} onStop={stopGeneration} />
-      <ChatView messages={messages} />
+      <Header 
+        isConnected={isConnected} 
+        isGenerating={isGenerating || isExecuting} 
+        onStop={stopGeneration} 
+      />
+      
+      <div className="flex flex-1 overflow-hidden">
+        <ChatView messages={messages} />
+        {executionResult && (
+          <CodeExecutionPanel result={executionResult} />
+        )}
+      </div>
+      
       <ChatInput
         input={input}
         setInput={setInput}
         onSendMessage={handleSendMessage}
-        isGenerating={isGenerating}
+        isGenerating={isGenerating || isExecuting}
       />
     </div>
   );

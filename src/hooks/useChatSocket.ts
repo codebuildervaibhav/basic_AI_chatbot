@@ -1,3 +1,4 @@
+// hooks/useChatSocket.ts
 import { useState, useCallback, useEffect, useRef } from 'react';
 
 export interface Message {
@@ -12,26 +13,39 @@ interface ChatOptions {
   systemPrompt?: string;
 }
 
-export const useChatSocket = (options?: ChatOptions) => {
+interface UseChatSocketReturn {
+  messages: Message[];
+  sendMessage: (message: string) => Promise<void>;
+  isConnected: boolean;
+  isGenerating: boolean;
+  stopGeneration: () => void;
+}
+
+export const useChatSocket = (options?: ChatOptions): UseChatSocketReturn => {
   const ollamaHost = options?.ollamaHost || 'http://localhost:11434';
-  const model = options?.model || 'gemma3:270m'; // Default to gemma3:270m
+  const model = options?.model || 'gemma3:270m';
   const defaultSystemPrompt = options?.systemPrompt || "You are a helpful AI assistant. Respond concisely and use markdown for formatting.";
 
   const [messages, setMessages] = useState<Message[]>([]);
-  const [isConnected, setIsConnected] = useState<boolean>(false); // Represents Ollama server availability
+  const [isConnected, setIsConnected] = useState<boolean>(false);
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
   // Check Ollama server status on mount
   useEffect(() => {
-    const checkOllamaStatus = async () => {
+    const checkOllamaStatus = async (): Promise<void> => {
       try {
-        const response = await fetch(`${ollamaHost}/api/tags`, { signal: abortControllerRef.current?.signal });
+        const response = await fetch(`${ollamaHost}/api/tags`, { 
+          signal: abortControllerRef.current?.signal 
+        });
         if (response.ok) {
           setIsConnected(true);
-          // Optionally, add the system prompt as the first message if not already present
           if (!messages.some(msg => msg.role === 'system')) {
-            setMessages((prev) => [{ id: 'system-init', role: 'system', content: defaultSystemPrompt }, ...prev]);
+            setMessages((prev) => [{ 
+              id: 'system-init', 
+              role: 'system', 
+              content: defaultSystemPrompt 
+            }, ...prev]);
           }
         } else {
           setIsConnected(false);
@@ -41,16 +55,20 @@ export const useChatSocket = (options?: ChatOptions) => {
         setIsConnected(false);
       }
     };
+    
     checkOllamaStatus();
-    const interval = setInterval(checkOllamaStatus, 5000); // Check every 5 seconds
+    const interval = setInterval(checkOllamaStatus, 5000);
     return () => clearInterval(interval);
   }, [ollamaHost, defaultSystemPrompt, messages]);
 
-
-  const sendMessage = useCallback(async (userMessage: string) => {
+  const sendMessage = useCallback(async (userMessage: string): Promise<void> => {
     if (!isConnected || isGenerating) return;
 
-    const newMessage: Message = { id: Date.now().toString(), role: 'user', content: userMessage };
+    const newMessage: Message = { 
+      id: Date.now().toString(), 
+      role: 'user', 
+      content: userMessage 
+    };
     setMessages((prevMessages) => [...prevMessages, newMessage]);
     setIsGenerating(true);
 
@@ -58,11 +76,11 @@ export const useChatSocket = (options?: ChatOptions) => {
     const signal = abortControllerRef.current.signal;
 
     try {
-      // Prepare messages for Ollama API, including the system prompt
       const ollamaMessages = [
-        { role: 'system', content: defaultSystemPrompt },
-        ...messages.filter(msg => msg.role !== 'system').map(msg => ({ role: msg.role, content: msg.content })),
-        { role: 'user', content: userMessage }
+        { role: 'system' as const, content: defaultSystemPrompt },
+        ...messages.filter(msg => msg.role !== 'system')
+                  .map(msg => ({ role: msg.role, content: msg.content })),
+        { role: 'user' as const, content: userMessage }
       ];
 
       const response = await fetch(`${ollamaHost}/api/chat`, {
@@ -85,11 +103,11 @@ export const useChatSocket = (options?: ChatOptions) => {
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
       let assistantResponse = '';
-      let assistantMessageId = Date.now().toString() + '-ai';
+      const assistantMessageId = Date.now().toString() + '-ai';
 
       setMessages((prevMessages) => [
         ...prevMessages,
-        { id: assistantMessageId, role: 'assistant', content: '' }, // Placeholder for streaming
+        { id: assistantMessageId, role: 'assistant', content: '' },
       ]);
 
       while (true) {
@@ -97,7 +115,6 @@ export const useChatSocket = (options?: ChatOptions) => {
         if (done) break;
 
         const chunk = decoder.decode(value, { stream: true });
-        // Ollama streams JSON objects, each on a new line
         chunk.split('\n').forEach((line) => {
           if (line.trim() === '') return;
           try {
@@ -110,7 +127,6 @@ export const useChatSocket = (options?: ChatOptions) => {
                 )
               );
             }
-            // Handle final response data if needed (e.g., total_duration)
           } catch (e) {
             console.error("Failed to parse JSON chunk:", e, line);
           }
@@ -123,7 +139,11 @@ export const useChatSocket = (options?: ChatOptions) => {
         console.error('Error communicating with Ollama:', error);
         setMessages((prevMessages) => [
           ...prevMessages,
-          { id: Date.now().toString() + '-error', role: 'assistant', content: `Error: ${error.message}` },
+          { 
+            id: Date.now().toString() + '-error', 
+            role: 'assistant', 
+            content: `Error: ${error.message}` 
+          },
         ]);
       }
     } finally {
@@ -132,12 +152,18 @@ export const useChatSocket = (options?: ChatOptions) => {
     }
   }, [isConnected, isGenerating, ollamaHost, model, messages, defaultSystemPrompt]);
 
-  const stopGeneration = useCallback(() => {
+  const stopGeneration = useCallback((): void => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       setIsGenerating(false);
     }
   }, []);
 
-  return { messages: messages.filter(msg => msg.role !== 'system'), sendMessage, isConnected, isGenerating, stopGeneration };
+  return { 
+    messages: messages.filter(msg => msg.role !== 'system'), 
+    sendMessage, 
+    isConnected, 
+    isGenerating, 
+    stopGeneration 
+  };
 };
